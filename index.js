@@ -21,22 +21,30 @@ var updateRecent = function() {
         ig.user_media_recent(settings.user_id, function(err, medias, pagination, remaining, limit) {
             recent = (!err) ? medias : [];
             summit.io.emit('recent', recent);
+            summit.io.emit('loaded');
             scheduleUpdate(remaining, limit);
         });
     }
     else {
         recent = [];
         summit.io.emit('recent', recent);
+        summit.io.emit('loading', 'Need settings...');
         clearTimeout(timeout);
     }
 };
 
 var updateClient = function(conf) {
-    ig.use({
-        client_id: conf.client_id,
-        client_secret: conf.client_secret,
-        access_token: conf.access_token,
-    });
+    if( (conf.client_id && conf.client_secret) || conf.access_token ) {
+        ig.use({
+            client_id: conf.client_id,
+            client_secret: conf.client_secret,
+            access_token: conf.access_token,
+        });
+    }
+    else {
+        clearTimeout(timeout);
+        summit.io.emit('loading', 'Need settings...');
+    }
 };
 
 module.exports = function(s) {
@@ -44,8 +52,15 @@ module.exports = function(s) {
     config = config || {};
 
     // emit the profiles on new connection
-    summit.io.on('connection', function() {
-        summit.io.emit('recent', recent);
+    summit.io.on('connection', function(socket) {
+        socket.emit('recent', recent);
+
+        if( recent.length ) {
+            socket.emit('loaded');
+        }
+        else {
+            socket.emit('loading', 'No images to show...');
+        }
     });
 
 
@@ -100,6 +115,16 @@ module.exports = function(s) {
 
             return {
                 id: id,
+                branding: {
+                    icon: {
+                        fa: 'instagram',
+                    },
+                    color: {
+                        background: 'instagram',
+                        text: 'clouds',
+                        icon: 'clouds',
+                    },
+                }
             };
         });
 
@@ -113,8 +138,11 @@ module.exports.style = __dirname + '/public/style.css';
 
 module.exports.onSettings = function(s) {
     settings = s;
-    if( (settings.client_id && settings.client_secret) || settings.access_token ) {
+    if( (!config.client_id && settings.client_id && !config.client_secret && settings.client_secret) || !config.access_token && settings.access_token ) {
         updateClient(settings);
+    }
+    else {
+        summit.io.emit('Need settings...');
     }
     updateRecent();
 };
